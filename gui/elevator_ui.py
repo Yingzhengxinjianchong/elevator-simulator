@@ -9,8 +9,11 @@ NUM_ELEVATORS = 5
 NUM_FLOORS = 20
 
 button_refs = {
-    "external": {},  # (floor, intent) -> button
+    "external": {},  # (eid, floor, intent) -> button
     "internal": {},  # (eid, floor) -> button
+    "sos": {},       # (eid) -> button
+    "open": {},      # (eid) -> button
+    "close": {},     # (eid) -> button
 }
 status_htmls = {}  # eid -> gr.HTML()
 
@@ -25,14 +28,14 @@ button.small-btn {
     max-width: 45px !important;
     display: inline-block !important;
 }
-.big-btn {
+.external-btn {
     width: 40px !important;
-    height: 40px !important;
-    font-size: 20px !important;
-    padding: 2px 4px !important;
-    margin: 2px !important;
-    min-width: 55px !important;
-    max-width: 55px !important;
+    height: 35px !important;
+    font-size: 15px !important;
+    padding: 0px 4px !important;
+    margin: 0px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
     display: inline-block !important;
 }
 .stop-btn {
@@ -75,24 +78,46 @@ def create_ui(elevator_threads):
             # 外部请求按钮
             with gr.Column(scale=1):
                 gr.Markdown("## 楼梯间（外部请求）")
-                floors = list(reversed(range(1, NUM_FLOORS + 1)))
-                for i in range(0, len(floors), 2):
+                
+                for floor in reversed(range(1, NUM_FLOORS + 1)):
+                    gr.Markdown(f"### 🏢 {floor} F")
+
+                    # 上行按钮行
                     with gr.Row():
-                        for floor in floors[i:i+2]:
-                            for intent, symbol in [(UserIntent.UP, "🔼"), (UserIntent.DOWN, "🔽")]:
-                                btn = gr.Button(f"{floor}{symbol}", elem_classes="big-btn")
-                                button_refs["external"][(floor, intent)] = btn
+                        for eid in range(1, NUM_ELEVATORS + 1):
+                            label = f"E{eid}🔼"
+                            btn = gr.Button(label, elem_classes=f"external-btn elevator-{eid}")
+                            button_refs["external"][(eid, floor, UserIntent.UP)] = btn
 
-                                def make_external_func(f=floor, i=intent):
-                                    def _submit():
-                                        req = Request(floor=f, request_type=RequestType.EXTERNAL, user_intent=i)
-                                        state_manager.set_external_button(f, i, True)
-                                        elevator_threads[3].add_request(req)  ####
-                                        with open("elevator_log.txt", "a", encoding="utf-8") as logf:
-                                            logf.write(f"[外部请求] 楼层 {f} {i.name} 请求\n")
-                                    return _submit
+                            def make_func(e=eid, f=floor, i=UserIntent.UP):
+                                def _submit():
+                                    req = Request(floor=f, request_type=RequestType.EXTERNAL, user_intent=i)
+                                    state_manager.set_external_button(f, i, True)
+                                    elevator_threads[e - 1].add_request(req)
+                                    with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                        logf.write(f"[外部请求] {f} 楼用户上行，呼叫电梯 {e} \n")
+                                return _submit
 
-                                btn.click(make_external_func(), None)
+                            btn.click(make_func(), None)
+
+                    # 下行按钮行
+                    with gr.Row():
+                        for eid in range(1, NUM_ELEVATORS + 1):
+                            label = f"E{eid}🔽"
+                            btn = gr.Button(label, elem_classes=f"external-btn elevator-{eid}")
+                            button_refs["external"][(eid, floor, UserIntent.DOWN)] = btn
+
+                            def make_func(e=eid, f=floor, i=UserIntent.DOWN):
+                                def _submit():
+                                    req = Request(floor=f, request_type=RequestType.EXTERNAL, user_intent=i)
+                                    state_manager.set_external_button(f, i, True)
+                                    elevator_threads[e - 1].add_request(req)
+                                    with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                        logf.write(f"[外部请求] {f} 楼用户下行，呼叫电梯 {e} \n")
+                                return _submit
+
+                            btn.click(make_func(), None)
+
 
             # 内部按钮 + 状态栏
             with gr.Column(scale=4):
@@ -102,6 +127,55 @@ def create_ui(elevator_threads):
 
                         with gr.Row():
                             status_htmls[eid] = gr.HTML(value="状态更新中...", elem_classes="status-box")
+                            snapshot = state_manager.get_snapshot()
+
+                            sos_event = threading.Event()
+                            sos_btn = gr.Button("🔴 报警", elem_classes="stop-btn")
+                            button_refs["sos"][eid] = sos_btn
+
+                            def make_sos_func(e=eid):
+                                sos_event.set()
+                                def _stop(e=e):
+                                    elevator_threads[e-1].stop()
+                                    with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                        logf.write(f"[报警] 电梯 {e} 已停止运行\n")
+                                    #print(f"电梯 {e} 报警")
+                                return _stop
+                            sos_btn.click(make_sos_func(), None)
+
+                            open_event = threading.Event()
+                            open_btn = gr.Button("开", elem_classes="small-btn")
+                            button_refs["open"][eid] = open_btn
+
+                            def make_open_func(e=eid):
+                                open_event.set()
+                                def _open(e=e):
+                                    if not snapshot["elevators"][eid]["door_open"]:
+                                        with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                            logf.write(f"[内部请求] 电梯 {e} 开门\n")
+                                        elevator_threads[e-1].open_door()
+                                    else:
+                                        with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                            logf.write(f"[内部请求] 电梯 {e} 开门\n[拦截回应] 电梯 {e} 已开门\n")
+                                return _open
+                            open_btn.click(make_open_func(), None)
+
+                            close_event = threading.Event()
+                            close_btn = gr.Button("关", elem_classes="small-btn")
+                            button_refs["close"][eid] = close_btn
+
+                            def make_close_func(e=eid):
+                                close_event.set()
+                                def _close(e=e):
+                                    if snapshot["elevators"][eid]["door_open"]:
+                                        with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                            logf.write(f"[内部请求] 电梯 {e} 关门\n")
+                                        elevator_threads[e-1].close_door()
+                                    else:
+                                        with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                                            logf.write(f"[内部请求] 电梯 {e} 关门\n[拦截回应] 电梯 {e} 已关门\n")
+                                return _close
+                            close_btn.click(make_close_func(), None)
 
                         for row in range(2):
                             with gr.Row():
@@ -126,17 +200,6 @@ def create_ui(elevator_threads):
 
         def update_status(dummy_input):  # dummy_input 是 dummy_state 的值
             snapshot = state_manager.get_snapshot()
-
-            for floor in range(1, NUM_FLOORS + 1):
-                for intent in [UserIntent.UP, UserIntent.DOWN]:
-                    btn = button_refs["external"][(floor, intent)]
-                    active = snapshot["external_buttons"][floor][intent.value]
-                    symbol = "↑" if intent == UserIntent.UP else "↓"
-                    btn_text = f"{floor}{symbol}" + ("✅" if active else "")
-                    try:
-                        btn.update(value=btn_text)
-                    except:
-                        pass
 
             for eid in range(1, NUM_ELEVATORS + 1):
                 state = snapshot["elevators"][eid]

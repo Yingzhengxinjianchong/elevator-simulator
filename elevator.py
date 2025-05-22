@@ -48,13 +48,12 @@ class Elevator(threading.Thread):
             time.sleep(0.5)
 
     def stop(self):
+        self.direction = Direction.NONE
         self.running = False
+        state_manager.update_elevator(self.elevator_id, self.current_floor, self.direction, self.door_open)
 
     def remove_handled_requests(self, floor: int):
-        #before = len(self.internal_requests)
         self.internal_requests = [r for r in self.internal_requests if r.floor != floor]
-        #if len(self.internal_requests) != before:
-         #   pass
 
         responded = self.dispatcher.remove_request(floor, self.elevator_id)
         if responded:
@@ -148,6 +147,9 @@ class Elevator(threading.Thread):
             self.close_door()
             return
 
+        if self.door_open:
+            self.close_door()
+        
         if self.current_floor < target_floor:
             self.current_floor += 1
         elif self.current_floor > target_floor:

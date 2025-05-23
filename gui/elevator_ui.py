@@ -135,10 +135,10 @@ def create_ui(elevator_threads):
 
                             def make_sos_func(e=eid):
                                 sos_event.set()
-                                def _stop(e=e):
-                                    elevator_threads[e-1].sos()
+                                def _stop(e=e):                                    
                                     with open("elevator_log.txt", "a", encoding="utf-8") as logf:
                                         logf.write(f"[内部请求] 电梯 {e} 内用户报警\n")
+                                    elevator_threads[e-1].sos()
                                     #print(f"电梯 {e} 报警")
                                 return _stop
                             sos_btn.click(make_sos_func(), None)

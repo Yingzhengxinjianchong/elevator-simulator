@@ -52,6 +52,12 @@ class Elevator(threading.Thread):
         self.running = False
         state_manager.update_elevator(self.elevator_id, self.current_floor, self.direction, self.door_open)
 
+    def sos(self):
+        if self.running:
+            self.stop()
+            with open("elevator_log.txt", "a", encoding="utf-8") as logf:
+                logf.write(f"[报警响应] 电梯 {self.elevator_id} 已停止运行\n")
+
     def remove_handled_requests(self, floor: int):
         self.internal_requests = [r for r in self.internal_requests if r.floor != floor]
 
@@ -142,7 +148,8 @@ class Elevator(threading.Thread):
             return
 
         if self.current_floor == target_floor:
-            self.open_door()
+            if not self.door_open:
+                self.open_door()
             self.remove_handled_requests(self.current_floor)
             self.close_door()
             return

@@ -77,7 +77,7 @@ def create_ui(elevator_threads):
         with gr.Row():
             # 外部请求按钮
             with gr.Column(scale=1):
-                gr.Markdown("## 楼梯间（外部请求）")
+                gr.Markdown("## 电梯间")
                 
                 for floor in reversed(range(1, NUM_FLOORS + 1)):
                     gr.Markdown(f"### 🏢 {floor} F")
@@ -136,9 +136,9 @@ def create_ui(elevator_threads):
                             def make_sos_func(e=eid):
                                 sos_event.set()
                                 def _stop(e=e):
-                                    elevator_threads[e-1].stop()
+                                    elevator_threads[e-1].sos()
                                     with open("elevator_log.txt", "a", encoding="utf-8") as logf:
-                                        logf.write(f"[报警] 电梯 {e} 已停止运行\n")
+                                        logf.write(f"[内部请求] 电梯 {e} 内用户报警\n")
                                     #print(f"电梯 {e} 报警")
                                 return _stop
                             sos_btn.click(make_sos_func(), None)
